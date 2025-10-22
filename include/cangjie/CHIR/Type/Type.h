@@ -414,6 +414,8 @@ public:
         const std::unordered_map<const GenericType*, Type*>& instMap,
         std::set<std::pair<const Type*, const Type*>>* visited = nullptr) const;
 
+    bool IsBoxRefTypeOf(const Type& baseType) const;
+
 protected:
     /**
      * funcType: argTys = { paramTypes, returnType }
