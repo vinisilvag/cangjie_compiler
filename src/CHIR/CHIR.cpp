@@ -6,6 +6,7 @@
 
 #include "cangjie/CHIR/CHIR.h"
 
+#include "cangjie/CHIR/Analysis/ConstAnalysisWrapper.h"
 #include "cangjie/CHIR/Analysis/CallGraphAnalysis.h"
 #include "cangjie/CHIR/Analysis/DevirtualizationInfo.h"
 #include "cangjie/CHIR/Utils/CHIRPrinter.h"
@@ -281,10 +282,10 @@ void ToCHIR::NothingTypeExprElimination()
     DumpCHIRToFile("NothingTypeExprElimination");
 }
 
-void ToCHIR::UnreachableBranchReporter()
+void ToCHIR::UnreachableBranchReporter(ConstAnalysisWrapper& constAnalysis)
 {
     Utils::ProfileRecorder recorder("CHIR Opt", "UnreachableBranchReporter");
-    auto check = CHIR::UnreachableBranchCheck(&constAnalysisWrapper, diag, pkg.fullPackageName);
+    auto check = CHIR::UnreachableBranchCheck(&constAnalysis, diag, pkg.fullPackageName);
     check.RunOnPackage(*chirPkg, opts.GetJobs());
 }
 
@@ -482,20 +483,21 @@ void ToCHIR::RunMergingBlocks(const std::string& firstName, const std::string& s
     DumpCHIRToFile(secondName);
 }
 
-void ToCHIR::RunConstantAnalysis()
+ConstAnalysisWrapper ToCHIR::RunConstantAnalysis()
 {
     Utils::ProfileRecorder recorder("CHIR Opt", "Constant Analysis");
-    constAnalysisWrapper.RunOnPackage(chirPkg, opts.chirDebugOptimizer, opts.GetJobs(), &diag);
+    ConstAnalysisWrapper ca(builder);
+    ca.RunOnPackage(chirPkg, opts.chirDebugOptimizer, opts.GetJobs(), &diag);
+    return ca;
 }
 
-void ToCHIR::RunConstantPropagation()
+void ToCHIR::RunConstantPropagation(ConstAnalysisWrapper& constAnalysis)
 {
     Utils::ProfileRecorder recorder("CHIR Opt", "Constant Propagation & Safety Check");
     size_t threadNum = opts.GetJobs();
     DeadCodeElimination dce(builder, diag, *chirPkg);
     if (threadNum == 1) {
-        auto cp = CHIR::ConstPropagation(builder, &constAnalysisWrapper, opts);
-        cp.RunOnPackage(chirPkg, opts.chirDebugOptimizer, ci.isCJLint);
+        auto cp = CHIR::ConstPropagation(builder, &constAnalysis, opts);
         MergeEffectMap(cp.GetEffectMap(), effectMap);
         dce.UnreachableBlockElimination(cp.GetFuncsNeedRemoveBlocks(), opts.chirDebugOptimizer);
     } else {
@@ -508,7 +510,7 @@ void ToCHIR::RunConstantPropagation()
         std::vector<std::unique_ptr<CHIR::ConstPropagation>> cpList;
         for (size_t idx = 0; idx < funcNum; ++idx) {
             auto func = globalFuncs.at(idx);
-            auto cp = std::make_unique<CHIR::ConstPropagation>(*builderList[idx], &constAnalysisWrapper, opts);
+            auto cp = std::make_unique<CHIR::ConstPropagation>(*builderList[idx], &constAnalysis, opts);
             taskQueue.AddTask<void>([constPropagation = cp.get(), func, isDebug, isCJLint]() {
                 return constPropagation->RunOnFunc(func, isDebug, isCJLint);
             });
@@ -868,7 +870,7 @@ bool ToCHIR::RunAnalysisForCJLint()
 {
     Utils::ProfileRecorder recorder("CHIR", "CHIR Opt");
     NothingTypeExprElimination();
-    RunConstantAnalysis();
+    auto constAnalysisResults = RunConstantAnalysis();
     if (!RunVarInitChecking()) {
         return false;
     }
@@ -876,11 +878,11 @@ bool ToCHIR::RunAnalysisForCJLint()
         return false;
     }
     UnreachableBlockElimination();
-    RunConstantPropagation();
+    RunConstantPropagation(constAnalysisResults);
     if (diag.GetErrorCount() > 0) {
         return false;
     }
-    constAnalysisWrapper.InvalidateAllAnalysisResults();
+    constAnalysisResults.InvalidateAllAnalysisResults();
     RunConstantAnalysis();
     return true;
 }
