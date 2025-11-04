@@ -22,8 +22,7 @@
 namespace Cangjie::CHIR {
 class ToCHIR {
 public:
-    ToCHIR(CompilerInstance& ci, AST::Package& pkg,
-        AnalysisWrapper<ConstAnalysis<ConstStatePool>, ConstDomain>& constAnalysisWrapper, CHIRBuilder& builder)
+    ToCHIR(CompilerInstance& ci, AST::Package& pkg, ConstAnalysisWrapper& constAnalysisWrapper, CHIRBuilder& builder)
         : ci(ci),
           opts(ci.invocation.globalOptions),
           typeManager(ci.typeManager),
@@ -139,7 +138,7 @@ private:
     void UnreachableBlockReporter();
     void NothingTypeExprElimination();
     void UselessExprElimination();
-    void UnreachableBranchReporter(ConstAnalysisWrapper& constAnalysis);
+    void UnreachableBranchReporter();
     void UselessFuncElimination();
     void RedundantLoadElimination();
     void UselessAllocateElimination();
@@ -169,7 +168,7 @@ private:
     void RecordCodeInfoAtTheEnd();
     void RecordCHIRExprNum(const std::string& suffix);
     bool RunAnalysisForCJLint();
-    ConstAnalysisWrapper RunConstantAnalysis();
+    void RunConstantAnalysis();
     // run semantic checks that have to be performed on CHIR
     bool RunAnnotationChecks();
     void EraseDebugExpr();
@@ -204,7 +203,7 @@ private:
     bool needToOptGenericDecl = false;
     CHIRBuilder& builder;
     uint64_t debugFileIndex{0};
-    AnalysisWrapper<ConstAnalysis<ConstStatePool>, ConstDomain>& constAnalysisWrapper;
+    ConstAnalysisWrapper& constAnalysisWrapper;
     OptEffectCHIRMap effectMap;
     OptEffectStrMap strEffectMap;
     VirtualWrapperDepMap curVirtFuncWrapDep;
