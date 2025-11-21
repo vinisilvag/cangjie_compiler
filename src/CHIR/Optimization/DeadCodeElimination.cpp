@@ -945,15 +945,22 @@ bool DeadCodeElimination::CheckUselessFunc(const Func& func, const GlobalOptions
         // C func may use in c code.
         return false;
     }
+    if (func.IsCFunc() && func.TestAttr(Attribute::PUBLIC)) {
+        // C func may use in c code.
+        return false;
+    }
     if (func.IsVirtualFunc()) {
+        // The func is in vtable.
         // The func is in vtable.
         return false;
     }
     if (func.GetFuncKind() == Cangjie::CHIR::CLASS_CONSTRUCTOR) {
         // should be revised
+        // should be revised
         return false;
     }
     if (func.GetFuncKind() == Cangjie::CHIR::FINALIZER) {
+        // The Finalizer func of a class, can not be removed.
         // The Finalizer func of a class, can not be removed.
         return false;
     }
