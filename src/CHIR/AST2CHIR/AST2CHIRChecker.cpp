@@ -293,7 +293,8 @@ bool CheckInheritDeclGlobalMember(
     }
     // member func
     if (decl.astKind == Cangjie::AST::ASTKind::FUNC_DECL) {
-        if (StaticCast<const Cangjie::AST::FuncDecl&>(decl).TestAttr(AST::Attribute::CONSTRUCTOR) || StaticCast<const Cangjie::AST::FuncDecl&>(decl).IsFinalizer()) {
+        if (StaticCast<const Cangjie::AST::FuncDecl&>(decl).TestAttr(AST::Attribute::CONSTRUCTOR) ||
+            StaticCast<const Cangjie::AST::FuncDecl&>(decl).IsFinalizer()) {
             return true;
         }
         if (decl.TestAttr(Cangjie::AST::Attribute::SPECIFIC) && chirNode.TestAttr(Attribute::DESERIALIZED)) {

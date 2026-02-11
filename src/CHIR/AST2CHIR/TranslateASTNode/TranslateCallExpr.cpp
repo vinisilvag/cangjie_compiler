@@ -935,7 +935,8 @@ Value* Translator::TranslateMemberFuncCall(const AST::CallExpr& expr)
     std::vector<Value*> args;
     auto calleeIsStatic = resolvedFunction->TestAttr(AST::Attribute::STATIC);
     if (!calleeIsStatic) {
-        auto thisObj = TranslateThisObjectForNonStaticMemberFuncCall(expr, resolvedFunction->TestAttr(AST::Attribute::MUT));
+        auto thisObj =
+            TranslateThisObjectForNonStaticMemberFuncCall(expr, resolvedFunction->TestAttr(AST::Attribute::MUT));
         CJC_ASSERT(!instCallInfo.instParamTys.empty());
         thisObj = TypeCastOrBoxIfNeeded(*thisObj, *instCallInfo.instParamTys[0], loc);
         args.emplace_back(thisObj);

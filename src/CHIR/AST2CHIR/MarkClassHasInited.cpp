@@ -138,8 +138,8 @@ void MarkClassHasInited::AssignHasInitedFlagToTrueInConstructorExit(Func& constr
         auto trueVal = builder.CreateConstantExpression<BoolLiteral>(boolTy, block, true);
         trueVal->MoveBefore(terminator);
         auto path = std::vector<std::string>{ Cangjie::HAS_INITED_IDENT };
-        auto storeRef =
-            builder.CreateExpression<StoreElementByName>(builder.GetUnitTy(), trueVal->GetResult(), thisArg, path, block);
+        auto storeRef = builder.CreateExpression<StoreElementByName>(
+            builder.GetUnitTy(), trueVal->GetResult(), thisArg, path, block);
         storeRef->MoveBefore(terminator);
     }
 }

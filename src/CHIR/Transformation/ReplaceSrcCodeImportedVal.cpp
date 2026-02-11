@@ -99,7 +99,8 @@ bool IsEmptyInitFunc(Func& func)
     }
     bool isEmpty = true;
     auto preVisit = [&isEmpty](Expression& e) {
-        if (e.GetExprKind() != Cangjie::CHIR::ExprKind::EXIT && e.GetExprKind() != Cangjie::CHIR::ExprKind::RAISE_EXCEPTION) {
+        if (e.GetExprKind() != Cangjie::CHIR::ExprKind::EXIT &&
+            e.GetExprKind() != Cangjie::CHIR::ExprKind::RAISE_EXCEPTION) {
             isEmpty = false;
         }
         return VisitResult::CONTINUE;

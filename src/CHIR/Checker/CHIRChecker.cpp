@@ -2520,7 +2520,8 @@ const std::vector<VirtualMethodInfo>* CHIRChecker::CheckVTableExist(
     return nullptr;
 }
 
-const std::vector<VirtualMethodInfo>* CHIRChecker::CheckVTableExist(const ClassType& srcParentType, const Func& topLevelFunc)
+const std::vector<VirtualMethodInfo>* CHIRChecker::CheckVTableExist(
+    const ClassType& srcParentType, const Func& topLevelFunc)
 {
     auto parentType = topLevelFunc.GetParentCustomTypeOrExtendedType();
     CJC_NULLPTR_CHECK(parentType);
@@ -3083,7 +3084,8 @@ void CHIRChecker::CheckInout(const IntrinsicBase& expr, const Func& topLevelFunc
     }
 
     // 7. result must be Func's or Intrinsic/pointerInit1's arg
-    std::function<void(const LocalVar&)> checkUsers = [this, &checkUsers, &expr, &topLevelFunc](const LocalVar& localVar) {
+    std::function<void(const LocalVar&)> checkUsers =
+        [this, &checkUsers, &expr, &topLevelFunc](const LocalVar& localVar) {
         for (auto user : localVar.GetUsers()) {
             auto errMsgBase = "the result is used in a wrong expression `" + user->ToString() + "`, ";
             if (Is<ApplyWithException>(user) || Is<Apply>(user)) {
@@ -3688,7 +3690,7 @@ void CHIRChecker::CheckGetException(const GetException& expr, const Func& topLev
     // 1. return type must be class&
     if (!result->GetType()->IsRef()) {
         TypeCheckError(expr, *result, "Object&", topLevelFunc);
-         return;
+        return;
     }
 
     auto baseType = StaticCast<RefType*>(result->GetType())->GetBaseType();

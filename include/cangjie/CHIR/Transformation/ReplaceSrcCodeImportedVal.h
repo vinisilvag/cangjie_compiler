@@ -18,14 +18,14 @@ public:
     
     /**
      * Replace source code imported functions and variables with imported symbols.
-     * 
+     *
      * This method performs the following transformations:
      * 1. Creates ImportedFunc and ImportedVar symbols for source code imported functions and variables
      * 2. Removes useless definitions created during closure conversion (useless classes and lambdas)
      * 3. Replaces all usages of source code imported functions/variables with their imported symbols
      * 4. Updates method and static variable pointers in custom type definitions and their vtables
      * 5. Removes the original source code imported functions and variables from the package
-     * 
+     *
      * @param srcCodeImportedFuncs Set of functions imported from source code to be replaced
      * @param srcCodeImportedVars Set of global variables imported from source code to be replaced
      * @param uselessClasses Set of class definitions that are useless and should be removed

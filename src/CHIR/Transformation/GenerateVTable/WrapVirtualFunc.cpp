@@ -35,7 +35,7 @@ bool JudgeIfNeedVirtualWrapper(
      *  because `this` in struct is value type, and in interface is ref type
      *  but for static function, we need to follow rules below
      */
-     if (!selfTy.IsClassOrArray() && !virtualFunc.TestAttr(Attribute::STATIC)) {
+    if (!selfTy.IsClassOrArray() && !virtualFunc.TestAttr(Attribute::STATIC)) {
         return true;
     }
     /*  there are two cases which need to wrap virtual function:
@@ -121,7 +121,8 @@ void WrapVirtualFunc::CheckAndWrap(CustomTypeDef& customTypeDef)
                 continue;
             }
             auto& parentVirMethodInfo = parentVTable.GetVirtualMethods()[i];
-            auto wrapper = CreateVirtualWrapperIfNeeded(curVirMethodInfo, parentVirMethodInfo, *selfTy, customTypeDef, *parentTy);
+            auto wrapper = CreateVirtualWrapperIfNeeded(
+                curVirMethodInfo, parentVirMethodInfo, *selfTy, customTypeDef, *parentTy);
             if (incrementalKind != IncreKind::INVALID) {
                 HandleVirtualFuncWrapperForIncrCompilation(wrapper, *curVirMethodInfo.GetVirtualMethod());
             }

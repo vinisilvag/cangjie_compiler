@@ -60,7 +60,9 @@ public:
     // ===--------------------------------------------------------------------===//
     /** @brief Get attribute information */
     AttributeInfo GetAttributeInfo() const;
-    /** @brief Get function signature condition information (including function name, function type, and generic type parameters) */
+    /** @brief Get function signature condition information
+     *  (including function name, function type, and generic type parameters)
+     */
     const FuncSigInfo& GetCondition() const;
     /** @brief Get generic type parameters list */
     std::vector<GenericType*> GetGenericTypeParams() const;
@@ -223,7 +225,8 @@ public:
     /** @brief Create a new virtual function table for the specified type and add virtual method list
      *  @param srcParent Source parent type
      *  @param funcInfos Virtual method information list (rvalue reference)
-     *  @note Requires that the virtual function table for this type does not exist, otherwise an assertion will be triggered
+     *  @note Requires that the virtual function table for this type does not exist,
+     *        otherwise an assertion will be triggered
      */
     void AddNewItemToTypeVTable(ClassType& srcParent, std::vector<VirtualMethodInfo>&& funcInfos);
     /** @brief Update method information at the specified index in the virtual function table of the specified type
