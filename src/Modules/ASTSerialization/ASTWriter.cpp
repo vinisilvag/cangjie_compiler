@@ -401,6 +401,27 @@ std::string GetImportPackageNameByImportSpec(const AST::ImportSpec& importSpec)
     }
     return ss.str();
 }
+
+void CollectAnnotations(const Decl& decl, std::vector<Ptr<Expr>>& fullExportExprs)
+{
+    if (auto classDecl = DynamicCast<ClassDecl>(&decl)) {
+        for (auto &it : classDecl->annotations) {
+            if (it->astKind == AST::ASTKind::ANNOTATION && it->args.size() > 0) {
+                fullExportExprs.emplace_back(it->args.front()->expr);
+            }
+        }
+    }
+}
+
+void CollectMembers(const Decl& decl, std::queue<Ptr<Decl>>& searchingQueue, bool serializingCommon)
+{
+    for (auto& member : decl.GetMemberDecls()) {
+        CJC_NULLPTR_CHECK(member);
+        if (member->linkage != Linkage::INTERNAL || IsGenericInCommonSerialization(serializingCommon, *member)) {
+            searchingQueue.emplace(member.get());
+        }
+    }
+}
 } // namespace
 
 ASTWriter::ASTWriter(DiagnosticEngine& diag, const std::string& packageDepInfo, const ExportConfig& exportCfg,
@@ -507,6 +528,7 @@ void ASTWriter::ASTWriterImpl::PreSaveFullExportDecls(Package& package)
     // Since using 'searched' to avoid duplication, we can use vector to collect all decls.
     // Visiting order of 'searchingQueue' is base on user code's calling stack, it will have stable order.
     std::vector<Ptr<Decl>> fullExportDecls;
+    std::vector<Ptr<Expr>> fullExportExprs;
     std::queue<Ptr<Decl>> searchingQueue;
     std::unordered_set<Ptr<Decl>> searched;
     IterateToplevelDecls(package, [&searchingQueue, this](auto& decl) {
@@ -539,12 +561,8 @@ void ASTWriter::ASTWriterImpl::PreSaveFullExportDecls(Package& package)
         if (!IsExternalNorminalDecl(*decl)) {
             continue;
         }
-        for (auto& member : decl->GetMemberDecls()) {
-            CJC_NULLPTR_CHECK(member);
-            if (member->linkage != Linkage::INTERNAL || IsGenericInCommonSerialization(serializingCommon, *member)) {
-                searchingQueue.emplace(member.get());
-            }
-        }
+        CollectAnnotations(*decl, fullExportExprs);
+        CollectMembers(*decl, searchingQueue, serializingCommon);
     }
 
     if (fullExportDecls.empty()) {
@@ -554,6 +572,9 @@ void ASTWriter::ASTWriterImpl::PreSaveFullExportDecls(Package& package)
     // Serialize decls.
     for (auto decl : fullExportDecls) {
         (void)GetDeclIndex(decl);
+    }
+    for (auto &expr : fullExportExprs) {
+        SaveExpr(*expr);
     }
 }
 
@@ -1627,78 +1648,110 @@ std::vector<TAnnoOffset> ASTWriter::ASTWriterImpl::SaveAnnotations(const Decl& d
     std::vector<TAnnoOffset> annotations;
 
     for (auto& annotation : std::as_const(decl.annotations)) {
-        if (annotation->kind == AST::AnnotationKind::DEPRECATED) {
-            auto args = builder.CreateVector<TAnnoArgOffset>(SaveAnnotationArgs(*annotation));
+        switch (annotation->kind) {
+            case AST::AnnotationKind::DEPRECATED: {
+                auto args = builder.CreateVector<TAnnoArgOffset>(SaveAnnotationArgs(*annotation));
 
-            auto serialized = PackageFormat::CreateAnno(
-                builder, PackageFormat::AnnoKind_Deprecated, builder.CreateString(annotation->identifier.Val()), args);
-            annotations.emplace_back(serialized);
-        } else if (annotation->kind == AST::AnnotationKind::ATTRIBUTE) {
-            auto hasTestRegisterAttr = false;
-
-            for (auto attr : std::as_const(annotation->attrs)) {
-                if (attr == "TEST_REGISTER") {
-                    hasTestRegisterAttr = true;
-                    break;
-                }
-            }
-
-            if (hasTestRegisterAttr) {
-                auto serialized = PackageFormat::CreateAnno(builder, PackageFormat::AnnoKind_TestRegistration,
-                    builder.CreateString(annotation->identifier.Val()), builder.CreateVector<TAnnoArgOffset>({}));
+                auto serialized = PackageFormat::CreateAnno(builder, PackageFormat::AnnoKind_Deprecated,
+                    builder.CreateString(annotation->identifier.Val()), args);
                 annotations.emplace_back(serialized);
+                break;
             }
-        } else if (annotation->kind == AST::AnnotationKind::FROZEN) {
-            auto frozen = PackageFormat::CreateAnno(builder, PackageFormat::AnnoKind_Frozen,
-                builder.CreateString(annotation->identifier.Val()), builder.CreateVector<TAnnoArgOffset>({}));
-            annotations.emplace_back(frozen);
-        } else if (annotation->kind == AST::AnnotationKind::JAVA_MIRROR) {
-            auto args = builder.CreateVector<TAnnoArgOffset>(SaveAnnotationArgs(*annotation));
-            auto mirror = PackageFormat::CreateAnno(
-                builder, PackageFormat::AnnoKind_JavaMirror, builder.CreateString(annotation->identifier.Val()), args);
-            annotations.emplace_back(mirror);
-        } else if (annotation->kind == AST::AnnotationKind::JAVA_IMPL) {
-            auto args = builder.CreateVector<TAnnoArgOffset>(SaveAnnotationArgs(*annotation));
-            auto impl = PackageFormat::CreateAnno(builder, PackageFormat::AnnoKind_JavaImpl,
-                builder.CreateString(annotation->identifier.Val()), args);
+            case AST::AnnotationKind::ATTRIBUTE: {
+                auto hasTestRegisterAttr = false;
+
+                for (auto attr : std::as_const(annotation->attrs)) {
+                    if (attr == "TEST_REGISTER") {
+                        hasTestRegisterAttr = true;
+                        break;
+                    }
+                }
+
+                if (hasTestRegisterAttr) {
+                    auto serialized = PackageFormat::CreateAnno(builder, PackageFormat::AnnoKind_TestRegistration,
+                        builder.CreateString(annotation->identifier.Val()), builder.CreateVector<TAnnoArgOffset>({}));
+                    annotations.emplace_back(serialized);
+                }
+                break;
+            }
+            case AST::AnnotationKind::FROZEN: {
+                auto frozen = PackageFormat::CreateAnno(builder, PackageFormat::AnnoKind_Frozen,
+                    builder.CreateString(annotation->identifier.Val()), builder.CreateVector<TAnnoArgOffset>({}));
+                annotations.emplace_back(frozen);
+                break;
+            }
+            case AST::AnnotationKind::JAVA_MIRROR: {
+                auto args = builder.CreateVector<TAnnoArgOffset>(SaveAnnotationArgs(*annotation));
+                auto mirror = PackageFormat::CreateAnno(builder, PackageFormat::AnnoKind_JavaMirror,
+                    builder.CreateString(annotation->identifier.Val()), args);
+                annotations.emplace_back(mirror);
+                break;
+            }
+            case AST::AnnotationKind::JAVA_IMPL: {
+                auto args = builder.CreateVector<TAnnoArgOffset>(SaveAnnotationArgs(*annotation));
+                auto impl = PackageFormat::CreateAnno(builder, PackageFormat::AnnoKind_JavaImpl,
+                    builder.CreateString(annotation->identifier.Val()), args);
                 annotations.emplace_back(impl);
-        }  else if (annotation->kind == AST::AnnotationKind::JAVA_HAS_DEFAULT) {
-            auto args = builder.CreateVector<TAnnoArgOffset>(SaveAnnotationArgs(*annotation));
-            auto javaHasDefault = PackageFormat::CreateAnno(builder, PackageFormat::AnnoKind_JavaHasDefault,
-                builder.CreateString(annotation->identifier.Val()), args);
-                annotations.emplace_back(javaHasDefault);
-        } else if (annotation->kind == AST::AnnotationKind::OBJ_C_MIRROR) {
-            auto args = builder.CreateVector<TAnnoArgOffset>(SaveAnnotationArgs(*annotation));
-            auto mirror = PackageFormat::CreateAnno(
-                builder, PackageFormat::AnnoKind_ObjCMirror, builder.CreateString(annotation->identifier.Val()), args);
-            annotations.emplace_back(mirror);
-        } else if (annotation->kind == AST::AnnotationKind::OBJ_C_IMPL) {
-            auto args = builder.CreateVector<TAnnoArgOffset>(SaveAnnotationArgs(*annotation));
-            auto impl = PackageFormat::CreateAnno(
-                builder, PackageFormat::AnnoKind_ObjCImpl, builder.CreateString(annotation->identifier.Val()), args);
-            annotations.emplace_back(impl);
-        } else if (annotation->kind == AST::AnnotationKind::FOREIGN_NAME) {
-            auto args = builder.CreateVector<TAnnoArgOffset>(SaveAnnotationArgs(*annotation));
-            auto impl = PackageFormat::CreateAnno(builder, PackageFormat::AnnoKind_ForeignName,
-                builder.CreateString(annotation->identifier.Val()), args);
-            annotations.emplace_back(impl);
-        } else if (annotation->kind == AST::AnnotationKind::CUSTOM &&
-            (annotation->isCompileTimeVisible || decl.TestAnyAttr(Attribute::COMMON, Attribute::SPECIFIC))) {
-            // Save common/specific annotations for consistency checking
-            // This ensures that common and specific sides can be validated for annotation consistency
-            auto args = builder.CreateVector<TAnnoArgOffset>(SaveAnnotationArgs(*annotation));
-            Ptr<Expr> baseExpr = annotation->baseExpr;
-            TFullIdOffset targetIdx = INVALID_FORMAT_INDEX;
-            if (baseExpr && baseExpr->GetTarget()) {
-                auto target = baseExpr->GetTarget();
-                targetIdx = GetFullDeclIndex(target);
+                break;
             }
-            auto custom = PackageFormat::CreateAnno(builder, PackageFormat::AnnoKind_Custom,
-                builder.CreateString(annotation->identifier.Val()), args, targetIdx);
-            annotations.emplace_back(custom);
+            case AST::AnnotationKind::JAVA_HAS_DEFAULT: {
+                auto args = builder.CreateVector<TAnnoArgOffset>(SaveAnnotationArgs(*annotation));
+                auto javaHasDefault = PackageFormat::CreateAnno(builder, PackageFormat::AnnoKind_JavaHasDefault,
+                    builder.CreateString(annotation->identifier.Val()), args);
+                annotations.emplace_back(javaHasDefault);
+                break;
+            }
+            case AST::AnnotationKind::OBJ_C_MIRROR: {
+                auto args = builder.CreateVector<TAnnoArgOffset>(SaveAnnotationArgs(*annotation));
+                auto mirror = PackageFormat::CreateAnno(builder, PackageFormat::AnnoKind_ObjCMirror,
+                    builder.CreateString(annotation->identifier.Val()), args);
+                annotations.emplace_back(mirror);
+                break;
+            }
+            case AST::AnnotationKind::OBJ_C_IMPL: {
+                auto args = builder.CreateVector<TAnnoArgOffset>(SaveAnnotationArgs(*annotation));
+                auto impl = PackageFormat::CreateAnno(builder, PackageFormat::AnnoKind_ObjCImpl,
+                    builder.CreateString(annotation->identifier.Val()), args);
+                annotations.emplace_back(impl);
+                break;
+            }
+            case AST::AnnotationKind::FOREIGN_NAME: {
+                auto args = builder.CreateVector<TAnnoArgOffset>(SaveAnnotationArgs(*annotation));
+                auto impl = PackageFormat::CreateAnno(builder, PackageFormat::AnnoKind_ForeignName,
+                    builder.CreateString(annotation->identifier.Val()), args);
+                annotations.emplace_back(impl);
+                break;
+            }
+            case AST::AnnotationKind::CUSTOM:
+                if (annotation->isCompileTimeVisible || decl.TestAnyAttr(Attribute::COMMON, Attribute::SPECIFIC)) {
+                    // Save common/specific annotations for consistency checking
+                    // This ensures that common and specific sides can be validated for annotation consistency
+                    auto args = builder.CreateVector<TAnnoArgOffset>(SaveAnnotationArgs(*annotation));
+                    Ptr<Expr> baseExpr = annotation->baseExpr;
+                    TFullIdOffset targetIdx = INVALID_FORMAT_INDEX;
+                    if (baseExpr && baseExpr->GetTarget()) {
+                        auto target = baseExpr->GetTarget();
+                        targetIdx = GetFullDeclIndex(target);
+                    }
+                    auto custom = PackageFormat::CreateAnno(builder, PackageFormat::AnnoKind_Custom,
+                        builder.CreateString(annotation->identifier.Val()), args, targetIdx);
+                    annotations.emplace_back(custom);
+                }
+                break;
+            case AST::AnnotationKind::ANNOTATION:
+                if (annotation->args.empty()) {
+                    annotation->EnableAllTargets();
+                } else {
+                    auto args = builder.CreateVector<TAnnoArgOffset>(SaveAnnotationArgs(*annotation));
+                    auto annoTarget = PackageFormat::CreateAnno(builder, PackageFormat::AnnoKind_Annotation,
+                        builder.CreateString(annotation->identifier.Val()), args);
+                    annotations.emplace_back(annoTarget);
+                }
+                break;
+            default:
+                break;
         }
     }
-
     return annotations;
 }
 
@@ -1708,7 +1761,7 @@ std::vector<TAnnoArgOffset> ASTWriter::ASTWriterImpl::SaveAnnotationArgs(const A
 
     for (auto& arg : annotation.args) {
         // Only literal support yet.
-        if (arg->expr->astKind != ASTKind::LIT_CONST_EXPR) {
+        if (annotation.kind != AST::AnnotationKind::ANNOTATION && arg->expr->astKind != ASTKind::LIT_CONST_EXPR) {
             continue;
         }
         auto serialized =
