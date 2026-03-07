@@ -14,8 +14,8 @@
 #include "IRAttribute.h"
 #include "Utils/CGCommonDef.h"
 #include "Utils/CGUtils.h"
-#include "cangjie/CHIR/Type/ClassDef.h"
-#include "cangjie/CHIR/Type/Type.h"
+#include "cangjie/CHIR/IR/Type/ClassDef.h"
+#include "cangjie/CHIR/IR/Type/Type.h"
 
 namespace Cangjie::CodeGen {
 
@@ -1385,13 +1385,8 @@ llvm::Value* IRBuilder2::CreateTypeInfo(const CHIR::Type& gt,
         res = foundIt->second(*this);
         LLVMIRBuilder2::SetInsertPoint(curBB, curPt);
     } else if (baseType->IsGeneric()) {
-        if (auto upperBounds = static_cast<const CHIR::GenericType*>(baseType)->GetUpperBounds();
-            upperBounds.size() == 1 && static_cast<const CHIR::GenericType*>(baseType)->orphanFlag) {
-            res = CreateTypeInfo(upperBounds[0]);
-        } else {
-            CJC_ASSERT(false && "CHIR uses an unexpected Generic-Type.");
-            return nullptr;
-        }
+        CJC_ASSERT(false && "CHIR uses an unexpected Generic-Type.");
+        return nullptr;
     } else if (cgType->IsConcrete()) {
         res = cgType->GetOrCreateTypeInfo();
     } else if (cgType->IsStaticGI()) {

@@ -23,7 +23,7 @@
 #include "cangjie/CHIR/Analysis/AnalysisWrapper.h"
 #include "cangjie/CHIR/Analysis/ConstAnalysis.h"
 #include "cangjie/CHIR/Analysis/TypeAnalysis.h"
-#include "cangjie/CHIR/CHIRBuilder.h"
+#include "cangjie/CHIR/IR/CHIRBuilder.h"
 #include "cangjie/Frontend/CompileStrategy.h"
 #include "cangjie/Frontend/CompilerInvocation.h"
 #include "cangjie/IncrementalCompilation/IncrementalScopeAnalysis.h"

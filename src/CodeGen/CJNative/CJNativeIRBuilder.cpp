@@ -17,8 +17,8 @@
 #include "CGModule.h"
 #include "IRAttribute.h"
 #include "Utils/CGUtils.h"
-#include "cangjie/CHIR/Type/EnumDef.h"
-#include "cangjie/CHIR/Value.h"
+#include "cangjie/CHIR/IR/Type/EnumDef.h"
+#include "cangjie/CHIR/IR/Value/Value.h"
 
 namespace Cangjie::CodeGen {
 llvm::Value* IRBuilder2::FixFuncArg(const CGValue& srcValue, const CGType& destType, bool isThisArgInStructMut)
@@ -196,6 +196,17 @@ llvm::Value* IRBuilder2::CreateCallOrInvoke(const CGFunctionType& calleeType, ll
                 CJC_ASSERT(false && "Should not reach here.");
             }
             if (retValType->IsGeneric()) { // `retValType` is `T`
+                allocaForRetVal = CreateEntryAlloca(*returnCGType);
+                CreateStore(llvm::ConstantPointerNull::get(getInt8PtrTy(1U)), allocaForRetVal);
+                auto [prepareForNonRefBB, endBB] = Vec2Tuple<2>(CreateAndInsertBasicBlocks({"prepNRSRet", "end"}));
+                auto ti = CreateTypeInfo(*retValType);
+                CreateCondBr(CreateTypeInfoIsReferenceCall(*retValType), endBB, prepareForNonRefBB);
+                SetInsertPoint(prepareForNonRefBB);
+                CreateStore(CallIntrinsicAllocaGeneric({ti, GetLayoutSize_32(*retValType)}), allocaForRetVal);
+                CreateBr(endBB);
+                SetInsertPoint(endBB);
+            } else if (returnCHIRType->IsGeneric() && retValType->IsRef() && DeRef(*retValType)->IsBox()) {
+                retValType = StaticCast<const CHIR::BoxType>(DeRef(*retValType))->GetBaseType();
                 allocaForRetVal = CreateEntryAlloca(*returnCGType);
                 CreateStore(llvm::ConstantPointerNull::get(getInt8PtrTy(1U)), allocaForRetVal);
                 auto [prepareForNonRefBB, endBB] = Vec2Tuple<2>(CreateAndInsertBasicBlocks({"prepNRSRet", "end"}));
@@ -529,7 +540,7 @@ llvm::Instruction* IRBuilder2::CreateStore(
     return CreateStore(CGValue(val, valCGType), CGValue(ptr, ptrCGType));
 }
 
-llvm::Instruction* IRBuilder2::CreateStore(const CGValue& cgVal, const CGValue& cgDestAddr)
+llvm::Instruction* IRBuilder2::CreateStore(const CGValue& cgVal, const CGValue& cgDestAddr, CHIR::Type* boxType)
 {
     bool isMemberWrite = GetCGContext().GetBasePtrOf(cgDestAddr.GetRawValue()) != nullptr;
     bool isVolatile = false;
@@ -541,13 +552,14 @@ llvm::Instruction* IRBuilder2::CreateStore(const CGValue& cgVal, const CGValue& 
     // GetTypeInfoIsReference
     if (valType && valType->GetOriginal().IsGeneric() && !valType->GetSize() &&
         destDerefType->GetOriginal().IsGeneric() && !destDerefType->GetSize() && !isMemberWrite) {
-        auto dstTypeInfo = CreateTypeInfo(destDerefType->GetOriginal());
+        auto dstTypeInfo = CreateTypeInfo(boxType != nullptr ? *boxType : destDerefType->GetOriginal());
         // Check whether dstType is a reference.
         auto [handleRefBB, handleNonRefBB, exitBB] = Vec2Tuple<3>(CreateAndInsertBasicBlocks(
             {GenNameForBB("handle_store_ref"), GenNameForBB("handle_store_non_ref"), GenNameForBB("store_exit")}));
         destAddr =
             CreateBitCast(destAddr, getInt8PtrTy(1U)->getPointerTo(destAddr->getType()->getPointerAddressSpace()));
-        CreateCondBr(CreateTypeInfoIsReferenceCall(destDerefType->GetOriginal()), handleRefBB, handleNonRefBB);
+        CreateCondBr(CreateTypeInfoIsReferenceCall(boxType != nullptr ? *boxType : destDerefType->GetOriginal()),
+            handleRefBB, handleNonRefBB);
 
         SetInsertPoint(handleRefBB);
         LLVMIRBuilder2::CreateStore(val, destAddr, isVolatile);
@@ -558,7 +570,7 @@ llvm::Instruction* IRBuilder2::CreateStore(const CGValue& cgVal, const CGValue& 
         if (cgDestAddr.IsSRetArg()) {
             tmpPtr = CreateLoad(cgDestAddr);
         } else {
-            auto dstTypeSize = GetLayoutSize_32(destDerefType->GetOriginal());
+            auto dstTypeSize = GetLayoutSize_32(boxType != nullptr ? *boxType : destDerefType->GetOriginal());
             tmpPtr = CallIntrinsicAllocaGeneric({dstTypeInfo, dstTypeSize});
             (void)CreateStore(tmpPtr, destAddr);
         }
@@ -586,7 +598,7 @@ llvm::Instruction* IRBuilder2::CreateStore(const CGValue& cgVal, const CGValue& 
                     auto size = GetSize_32(cgVal.GetCGType()->GetOriginal());
                     return CallGCWriteGenericPayload({destAddr, val, size});
                 }
-                auto ti = CreateTypeInfo(cgVal.GetCGType()->GetOriginal());
+                auto ti = CreateTypeInfo(boxType != nullptr ? *boxType : cgVal.GetCGType()->GetOriginal());
                 return CallIntrinsicAssignGeneric({destAddr, val, ti});
             }
         }
@@ -1746,11 +1758,6 @@ llvm::Value* IRBuilder2::GetSizeFromTypeInfo(llvm::Value* typeInfo)
 llvm::Value* IRBuilder2::GetLayoutSize_32(const CHIR::Type& type)
 {
     auto baseType = DeRef(type);
-    if (auto gt = DynamicCast<const CHIR::GenericType*>(baseType); gt && gt->orphanFlag) {
-        CJC_ASSERT(gt->GetUpperBounds().size() == 1U);
-        baseType = gt->GetUpperBounds()[0];
-    }
-
     auto cgType = CGType::GetOrCreate(cgMod, baseType);
     if (auto s = cgType->GetSize()) {
         return llvm::ConstantInt::get(getInt32Ty(), s.value());
@@ -1762,11 +1769,6 @@ llvm::Value* IRBuilder2::GetLayoutSize_32(const CHIR::Type& type)
 llvm::Value* IRBuilder2::GetLayoutSize_64(const CHIR::Type& type)
 {
     auto baseType = DeRef(type);
-    if (auto gt = DynamicCast<const CHIR::GenericType*>(baseType); gt && gt->orphanFlag) {
-        CJC_ASSERT(gt->GetUpperBounds().size() == 1U);
-        baseType = gt->GetUpperBounds()[0];
-    }
-
     auto cgType = CGType::GetOrCreate(cgMod, baseType);
     if (auto s = cgType->GetSize()) {
         return llvm::ConstantInt::get(getInt64Ty(), s.value());
@@ -1778,10 +1780,6 @@ llvm::Value* IRBuilder2::GetLayoutSize_64(const CHIR::Type& type)
 llvm::Value* IRBuilder2::GetSize_32(const CHIR::Type& type)
 {
     auto baseType = DeRef(type);
-    if (auto gt = DynamicCast<const CHIR::GenericType*>(baseType); gt && gt->orphanFlag) {
-        CJC_ASSERT(gt->GetUpperBounds().size() == 1U);
-        baseType = gt->GetUpperBounds()[0];
-    }
     if (baseType->IsGeneric()) {
         auto [refSizeBB, nonRefSizeBB, exitBB] = Vec2Tuple<3>(CreateAndInsertBasicBlocks(
             {GenNameForBB("get_ref_size"), GenNameForBB("get_non_ref_size"), GenNameForBB("get_size_exit")}));
@@ -1922,11 +1920,6 @@ llvm::Value* IRBuilder2::CreateTypeInfoIsReferenceCall(llvm::Value* ti)
 llvm::Value* IRBuilder2::CreateTypeInfoIsReferenceCall(const CHIR::Type& chirType)
 {
     auto baseType = DeRef(chirType);
-    if (auto gt = DynamicCast<const CHIR::GenericType*>(baseType); gt && gt->orphanFlag) {
-        CJC_ASSERT(gt->GetUpperBounds().size() == 1U);
-        baseType = gt->GetUpperBounds()[0];
-    }
-
     if (baseType->IsGeneric()) {
         auto baseTypeTI = CreateTypeInfo(*baseType);
         return CreateTypeInfoIsReferenceCall(baseTypeTI);
