@@ -198,7 +198,6 @@ static size_t SkipBracketedTokens(const TokenVector& tokens, size_t idx,
 // Skip the annotation's own tokens: @AnnotationName[args] and trailing newlines.
 // This is needed when re-evaluating a custom annotation to avoid scanning the
 // annotation itself (which would cause duplicate tokens in RefreshMacroCallArgs).
-//
 // Example: For "@BeanMeta[args]\n@Bean@Pointcut", returns index pointing to "@Bean"
 static size_t SkipAnnotationTokens(const TokenVector& tokens)
 {
